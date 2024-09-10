@@ -19,7 +19,7 @@ blueprint:
   input:
     motion_entity:
       name: Motion Sensor
-      description: Motion Sensor or a group with Motion Sensors (But can be anything switching between "on" and "off")
+      description: Motion Sensor or a group with Motion Sensors (But can be anything switching between "Detected" and "Clear)
       selector:
         entity:
           multiple: false
@@ -156,12 +156,12 @@ variables:
 trigger:
   - platform: state
     entity_id: !input motion_entity
-    from: "off"
-    to: "on"
+    from: "Clear"
+    to: "Detected"
   - platform: state
     entity_id: !input motion_entity
-    from: "on"
-    to: "off"
+    from: "Detected"
+    to: "Clear"
     for: !input no_motion_wait
 condition:
   - condition: or
