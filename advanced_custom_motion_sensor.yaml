@@ -9,7 +9,7 @@ blueprint:
     times of day (optional)\n - Ambient support with time frame (optional)\n - Default
     scene when motion stops (optional)\n - “no motion blocker” with user choosable
     state (optional)\n - As option one or more illumiance sensors can be used\n
-    - Scene.none removed and optimized for new Home Assistant features"
+    - Scene.none removed and optimized for new Home Assistant features\n"
   domain: automation
   input:
     motion_entity:
