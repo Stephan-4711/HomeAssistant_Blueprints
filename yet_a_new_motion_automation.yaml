@@ -1,6 +1,6 @@
 blueprint:
-  name: Yet Another Motion Automation (Custom Optimized V12)
-  description: "# YAMA V12 (Fixed & Optimized)\n\nTurn on lights or scenes when motion is detected optional with illuminance sensor.\nFour different scenes can be defined depending on time of day.\n\nCapabilities & Fixes:\n- Trigger on motion (supports multiple sensors safely)\n- 15s grace period after turn-off to bypass slow illuminance sensor updates\n- Wait time only starts when ALL motion sensors are clear\n- Fixed boolean logic for Automation Blocker and No Motion Blocker\n- 4 Scenes for different times of day (optional)\n- Ambient support with time frame (optional)\n- Default scene when motion stops (optional)\n"
+  name: Yet Another Motion Automation (Custom Optimized V13)
+  description: "# YAMA V13 (Fixed & Multi-Sensor Ready)\n\nTurn on lights or scenes when motion is detected optional with illuminance sensor.\nFour different scenes can be defined depending on time of day.\n\nCapabilities & Fixes:\n- Trigger on motion (supports single & multiple sensors natively)\n- Wait time only turns off light when ALL motion sensors are 'off'\n- Smart Lux bypass: ignores high lux if light is already on or turned off less than 15s ago\n- Fixed Blocker logic: Chooser defines which state BLOCKS the action\n- 4 Scenes for different times of day (optional)\n- Ambient support with time frame (optional)\n- Default scene when motion stops (optional)\n"
   domain: automation
   input:
     motion_entity:
@@ -48,27 +48,27 @@ blueprint:
           mode: slider
     automation_blocker:
       name: Automation Blocker (Optional)
-      description: Only run if this entity is in desired state (see next input)
+      description: Blocks turning on the light if this entity is in the state chosen below
       default: ""
       selector:
         entity:
           multiple: false
     automation_blocker_boolean:
       name: Automation Blocker Chooser (Optional)
-      description: Desired state of automation blocker, choose on (true) for on and off (false) for off
+      description: State that BLOCKS the automation -> ON (true) blocks when entity is 'on', OFF (false) blocks when entity is 'off'
       default: false
       selector:
         boolean: {}
     no_motion_blocker:
       name: No Motion Blocker (Optional)
-      description: No motion sequence is not run if this entity is in desired state (see next input)
+      description: Blocks turning off the light if this entity is in the state chosen below
       default: ""
       selector:
         entity:
           multiple: false
     no_motion_blocker_boolean:
       name: No Motion Chooser (Optional)
-      description: Desired state of no motion blocker, choose on (true) for on and off (false) for off
+      description: State that BLOCKS turning off -> ON (true) blocks when entity is 'on', OFF (false) blocks when entity is 'off'
       default: false
       selector:
         boolean: {}
@@ -182,8 +182,7 @@ variables:
   motion_entity: !input motion_entity
   luminance_sensor: !input luminance_sensor
   luminance_required: !input luminance_required
-  # Normalisiert motion_entity immer zu einer Liste (wichtig für Multi-Sensor-Abfragen)
-  motion_list: "{{ [motion_entity] if motion_entity is string else motion_entity }}"
+  no_motion_wait: !input no_motion_wait
 
 trigger:
   - platform: state
@@ -202,8 +201,10 @@ condition:
   - condition: or
     conditions:
       - '{{ automation_blocker is none or automation_blocker == "none" or automation_blocker == "" }}'
-      - '{{ automation_blocker_boolean and states(automation_blocker) == "on" }}'
-      - '{{ not automation_blocker_boolean and states(automation_blocker) == "off" }}'
+      # Wenn Chooser = AN (true), blockiere bei 'on' -> erlaube Ausführung nur wenn NICHT 'on'
+      - '{{ automation_blocker_boolean and states(automation_blocker) != "on" }}'
+      # Wenn Chooser = AUS (false), blockiere bei 'off' -> erlaube Ausführung nur wenn NICHT 'off'
+      - '{{ not automation_blocker_boolean and states(automation_blocker) != "off" }}'
       - condition: trigger
         id: "motion_off"
   - condition: template
@@ -222,8 +223,8 @@ action:
               - condition: numeric_state
                 entity_id: !input luminance_sensor
                 below: !input luminance_required
-              # 15 Sekunden Karenzzeit nach letztem Trigger (z.B. kurz nach dem Ausschalten), um träge Lux-Sensoren zu überbrücken
-              - '{{ (as_timestamp(now()) - as_timestamp(state_attr(this.entity_id, "last_triggered") | default(0), 0)) < 15 }}'
+              # Überbrückt träge Lux-Sensoren: Erlaubt das Triggern, wenn der Melder nach Ablauf von no_motion_wait erst vor max. 15 Sekunden ausgegangen ist
+              - '{{ (as_timestamp(now()) - as_timestamp(trigger.from_state.last_changed | default(0), 0)) < (no_motion_wait | int(120) + 15) }}'
         sequence:
           - choose:
               - conditions:
@@ -266,18 +267,20 @@ action:
               - action: light.turn_on
                 target: !input light_target
 
-      # PFAD 2: Keine Bewegung mehr (alle Sensoren müssen "off" sein)
+      # PFAD 2: Keine Bewegung mehr (Prüft nativ, ob ALLE eingetragenen Sensoren auf "off" stehen)
       - conditions:
           - condition: trigger
             id: "motion_off"
-          # Prüft, ob wirklich ALLE übergebenen Bewegungsmelder auf 'off' stehen
-          - condition: template
-            value_template: "{{ expand(motion_list) | selectattr('state', 'eq', 'on') | list | count == 0 }}"
+          - condition: state
+            entity_id: !input motion_entity
+            state: "off"
           - condition: or
             conditions:
               - '{{ no_motion_blocker is none or no_motion_blocker == "none" or no_motion_blocker == "" }}'
-              - '{{ no_motion_blocker_boolean and states(no_motion_blocker) == "on" }}'
-              - '{{ not no_motion_blocker_boolean and states(no_motion_blocker) == "off" }}'
+              # Wenn Chooser = AN (true), blockiere das Ausschalten bei 'on' -> schalte nur aus wenn NICHT 'on'
+              - '{{ no_motion_blocker_boolean and states(no_motion_blocker) != "on" }}'
+              # Wenn Chooser = AUS (false), blockiere das Ausschalten bei 'off' -> schalte nur aus wenn NICHT 'off'
+              - '{{ not no_motion_blocker_boolean and states(no_motion_blocker) != "off" }}'
         sequence:
           - choose:
               - conditions:
